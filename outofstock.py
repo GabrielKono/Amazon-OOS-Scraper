@@ -191,11 +191,11 @@ def write_results_to_excel(output_file_path, results):
 
 def status_text(status):
     if status == "Out Of Stock":
-        return "No (OOS)"
+        return "Yes (OOS)"
     elif status == "URL not found":
-        return "No (Suppressed)"
+        return "No"
     else:
-        return "YES"
+        return "Yes"
 
 
 def load_or_create_workbook(file_path):
