@@ -48,7 +48,7 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:52.0) Gecko/20100101 Firefox/52.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36',
     'Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; AS; rv:11.0) like Gecko',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36',
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36',
@@ -167,24 +167,36 @@ def get_region_from_url(url):
         return 'UK'
 
 # Write the results to a new output Excel file
+# Write the results to a new output Excel file
 def write_results_to_excel(output_file_path, results):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
 
     # Write the header row
     sheet.cell(row=1, column=1).value = 'ASIN'
-    sheet.cell(row=1, column=2).value = 'Region'
-    sheet.cell(row=1, column=3).value = 'URL'
-    sheet.cell(row=1, column=4).value = 'Status'
+    sheet.cell(row=1, column=2).value = 'UK'
+    sheet.cell(row=1, column=3).value = 'DE'
+    sheet.cell(row=1, column=4).value = 'FR'
+    sheet.cell(row=1, column=5).value = 'ES'
+    sheet.cell(row=1, column=6).value = 'IT'
 
     # Write the results
-    for index, result in enumerate(results, start=2):
-        sheet.cell(row=index, column=1).value = result['asin']
-        sheet.cell(row=index, column=2).value = result['region']
-        sheet.cell(row=index, column=3).value = result['url']
-        sheet.cell(row=index, column=4).value = result['status']
+    for index, (asin, asin_result) in enumerate(results.items(), start=2):
+        sheet.cell(row=index, column=1).value = asin
+        for col, region in enumerate(('UK', 'DE', 'FR', 'ES', 'IT'), start=2):
+            sheet.cell(row=index, column=col).value = asin_result[region]
 
     workbook.save(output_file_path)
+
+
+def status_text(status):
+    if status == "Out Of Stock":
+        return "No (OOS)"
+    elif status == "URL not found":
+        return "No (Suppressed)"
+    else:
+        return "YES"
+
 
 def load_or_create_workbook(file_path):
     try:
@@ -205,8 +217,8 @@ def send_email(subject, body, attachment_path):
     mail.Attachments.Add(attachment_path)
 
     # Add recipients (To and CC)
-    #mail.To = "mail@mail.com"  # Replace with the recipient's email address
-    #mail.CC = "mail@mail.com"  # Replace with the CC recipient's email address
+    mail.To = "ritchie.emery@funko.com"  # Replace with the recipient's email address
+    mail.CC = "gabriel.konopnicki@funko.com"  # Replace with the CC recipient's email address
 
     # Use the following line to display the email before sending
     mail.Display()
@@ -221,47 +233,38 @@ def get_formatted_date():
     return today.strftime("ASINs Status %d%b%Y")
 
 def create_email_body(results, total_urls, total_asins):
-    total_results = len(results)
-    out_of_stock_count = sum(1 for result in results if result['status'] == 'Out Of Stock')
-    url_not_found_count = sum(1 for result in results if result['status'] == 'URL not found')
+    out_of_stock_count = sum(1 for asin_results in results.values() for region_status in asin_results.values() if region_status == 'No (OOS)')
+    suppressed_count = sum(1 for asin_results in results.values() for region_status in asin_results.values() if region_status == 'No (Suppressed)')
 
-    # Calculate percentages
-    out_of_stock_percentage = (out_of_stock_count / total_urls) * 100
-    url_not_found_percentage = (url_not_found_count / total_urls) * 100
-
-    body = f"""Hi,
-
-I hope this email finds you well. Please find the attached ASINs status report for today, {get_formatted_date()}.
-
-Summary of the report:
-- ASINS processed: {total_asins}
-- Total URLs processed: {total_urls}
-- Out of Stock: {out_of_stock_count} ({out_of_stock_percentage:.2f}%)
-- URL not found: {url_not_found_count} ({url_not_found_percentage:.2f}%)
-
-Please review the attached report for more detailed information. If you have any questions or need further assistance, don't hesitate to reach out.
-
-Best regards,
-
-[Your Name]
-[Your Position]
-"""
-
+    body = f"""\
+    <html>
+    <head></head>
+    <body>
+        <h1>ASINs Status Report</h1>
+        <p>Total ASINs: {total_asins}</p>
+        <p>Total URLs processed: {total_urls}</p>
+        <p>Out of Stock ASINs: {out_of_stock_count}</p>
+        <p>Suppressed ASINs: {suppressed_count}</p>
+        <p>Please find the attached Excel file for the full results.</p>
+    </body>
+    </html>
+    """
     return body
+
     
 # Main function
 def main():
     total_asins_processed = 0
-    input_file_path = r'PATH FOR THE INPUT FILE'
+    input_file_path = r'C:\Users\gabriel.konopnicki\OneDrive - funko.com\Desktop\input\list.xlsx'
 
     # Generate the output file name based on today's date
     today = datetime.today().strftime('%d%b%Y')
     output_file_name = f"ASINS_Status_{today}.xlsx"
-    output_file_path = fr'PATH FOR THE OUTPUT FILE/{output_file_name}'
+    output_file_path = fr'C:\Users\gabriel.konopnicki\OneDrive - funko.com\Desktop\input\output\{output_file_name}'
 
     asins = read_asins_from_excel(input_file_path)
 
-    results = []
+    results = {asin: {'UK': '', 'DE': '', 'FR': '', 'ES': '', 'IT': ''} for asin in asins}
     total_urls = len(asins) * 5  # Assuming 5 domains for each ASIN
     total_asins = len(asins) 
     urls_processed = 0
@@ -275,8 +278,7 @@ def main():
         urls = generate_urls_for_asin(asin)
         for region, url in urls.items():
             status = check_availability(url, region)
-            if status == "Out Of Stock" or status == "URL not found":
-                results.append({'asin': asin, 'region': region, 'url': url, 'status': status})
+            results[asin][region] = status_text(status)
 
             # Calculate progress information
             urls_processed += 1
