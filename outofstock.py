@@ -19,7 +19,7 @@ def format_time(seconds):
     return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -83,6 +83,16 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36',
     
 ]
+def is_not_found(soup, region):
+    not_found_messages = {
+        'UK': 'Looking for something?',
+    }
+    
+    message = not_found_messages.get(region)
+    if message:
+        return message in soup.text
+    else:
+        return False
 
 def read_asins_from_excel(file_path):
     workbook = openpyxl.load_workbook(file_path)
@@ -101,9 +111,13 @@ def check_availability(url, region):
     headers = {
         'User-Agent': random.choice(USER_AGENTS)
     }
+    seller_name = None
     for _ in range(3):  # Retry up to 3 times
         try:
             response = requests.get(url, headers=headers)
+            if response.status_code == 404:
+                logging.warning(f"URL not found: {url}")
+                return 'URL not found', seller_name
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'lxml')
 
@@ -113,57 +127,39 @@ def check_availability(url, region):
 
             out_of_stock_phrases = get_out_of_stock_phrases(region)
             if out_of_stock and any(phrase in out_of_stock.text.lower() for phrase in out_of_stock_phrases):
-                return 'Out Of Stock'
+                return 'Out Of Stock', seller_name
             else:
-                return 'In Stock'
+                seller_tag = soup.find('a', {'id': 'sellerProfileTriggerId'})
+                if not seller_tag:
+                    seller_tag = soup.find('span', {'class': 'a-size-small tabular-buybox-text-message'})
+                seller_name = seller_tag.text.strip() if seller_tag else 'N/A'
+                logging.debug(f"DEBUG: Seller name found: {seller_name}")
+                return 'In Stock', seller_name
 
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                logging.exception(f"URL not found: {url}")
-                return 'URL not found'
-            else:
-                logging.exception(f"HTTPError for URL: {url}")
-                time.sleep(5)
-    return 'Failed to fetch URL'
+            logging.exception(f"HTTPError for URL: {url} - Status code: {e.response.status_code}")
+            time.sleep(5)
+    return 'Failed to fetch URL', seller_name
+
 
 
 def generate_urls_for_asin(asin):
     domains = {
         'UK': 'https://www.amazon.co.uk/dp/',
-        'ES': 'https://www.amazon.es/dp/',
-        'FR': 'https://www.amazon.fr/dp/',
-        'DE': 'https://www.amazon.de/dp/',
-        'IT': 'https://www.amazon.it/dp/'
     }
-    # Check for None values and print them
-    for region, domain in domains.items():
-        if domain is None:
-            print(f"Domain for region {region} is None")
-
     urls = {region: domain + asin for region, domain in domains.items() if domain is not None}
     return urls
 
 def get_out_of_stock_phrases(region):
     phrases = {
-        'UK': ['out of stock', 'temporarily out of stock'],
-        'ES': ['agotado temporalmente', 'out of stock'],
-        'FR': ['temporairement en rupture de stock', 'out of stock'],
-        'DE': ['derzeit nicht auf lager', 'temporarily out of stock', 'out of stock'],
-        'IT': ['al momento non disponibile', 'out of stock'],
+        'UK': ['out of stock', 'temporarily out of stock','Currently unavailable'],
     }
     return phrases.get(region, [])
 
 # Determine the region based on the URL
 def get_region_from_url(url):
-    if 'amazon.es' in url:
-        return 'ES'
-    elif 'amazon.fr' in url:
-        return 'FR'
-    elif 'amazon.de' in url:
-        return 'DE'
-    elif 'amazon.it' in url:
-        return 'IT'
-    elif 'amazon.co.uk' in url:
+
+    if 'amazon.co.uk' in url:
         return 'UK'
 
 # Write the results to a new output Excel file
@@ -174,29 +170,28 @@ def write_results_to_excel(output_file_path, results):
 
     # Write the header row
     sheet.cell(row=1, column=1).value = 'ASIN'
-    sheet.cell(row=1, column=2).value = 'UK'
-    sheet.cell(row=1, column=3).value = 'DE'
-    sheet.cell(row=1, column=4).value = 'FR'
-    sheet.cell(row=1, column=5).value = 'ES'
-    sheet.cell(row=1, column=6).value = 'IT'
+    sheet.cell(row=1, column=2).value = 'UK Status'
+    sheet.cell(row=1, column=3).value = 'Seller Name'
 
     # Write the results
     for index, (asin, asin_result) in enumerate(results.items(), start=2):
         sheet.cell(row=index, column=1).value = asin
-        for col, region in enumerate(('UK', 'DE', 'FR', 'ES', 'IT'), start=2):
-            sheet.cell(row=index, column=col).value = asin_result[region]
+        sheet.cell(row=index, column=2).value = asin_result['UK']['status']
+        sheet.cell(row=index, column=3).value = asin_result['UK']['seller']
 
     workbook.save(output_file_path)
+
 
 
 def status_text(status):
     if status == "Out Of Stock":
         return "OOS"
-    elif status == "URL not found":
+    if status == "URL not found":
+        return "No"
+    if status == "Failed to fetch URL":
         return "No"
     else:
         return "Yes"
-
 
 def load_or_create_workbook(file_path):
     try:
@@ -253,6 +248,7 @@ def create_email_body(results, total_urls, total_asins):
 
     
 # Main function
+# Main function
 def main():
     total_asins_processed = 0
     input_file_path = r'C:\Users\gabriel.konopnicki\OneDrive - funko.com\Desktop\input\list.xlsx'
@@ -264,9 +260,9 @@ def main():
 
     asins = read_asins_from_excel(input_file_path)
 
-    results = {asin: {'UK': '', 'DE': '', 'FR': '', 'ES': '', 'IT': ''} for asin in asins}
-    total_urls = len(asins) * 5  # Assuming 5 domains for each ASIN
-    total_asins = len(asins) 
+    results = {asin: {'UK': ''} for asin in asins}
+    total_urls = len(asins)  # Only checking the UK domain
+    total_asins = len(asins)
     urls_processed = 0
     start_time = time.time()
 
@@ -277,8 +273,9 @@ def main():
     for asin in asins:
         urls = generate_urls_for_asin(asin)
         for region, url in urls.items():
-            status = check_availability(url, region)
-            results[asin][region] = status_text(status)
+            if region == 'UK':  # Only check the UK
+                status, seller_name = check_availability(url, region)
+                results[asin][region] = {'status': status_text(status), 'seller': seller_name}
 
             # Calculate progress information
             urls_processed += 1
@@ -308,6 +305,7 @@ def main():
 
     # Print the success message
     print("Hooray! The process has been successfully completed.")
+
 
 # Run the main function
 if __name__ == '__main__':
