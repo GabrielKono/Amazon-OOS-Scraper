@@ -7,11 +7,21 @@ import logging
 import time
 import datetime
 import win32com.client as win32
+import re
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl import load_workbook
 from datetime import datetime
+
+def clean_asin(asin):
+    # Remove leading and trailing spaces
+    asin = asin.strip()
+    
+    # Remove special characters
+    asin = re.sub(r'[^A-Za-z0-9]+', '', asin)
+    
+    return asin
 
 def format_time(seconds):
     hours, remainder = divmod(seconds, 3600)
@@ -91,6 +101,8 @@ def read_asins_from_excel(file_path):
 
     for row in sheet.iter_rows(min_row=2, values_only=True):
         asin = row[0]
+        cleaned_asin = clean_asin(asin)
+        asins.append(cleaned_asin)
         asins.append(asin)
 
     return asins
@@ -140,7 +152,7 @@ def generate_urls_for_asin(asin):
         if domain is None:
             print(f"Domain for region {region} is None")
 
-    urls = {region: domain + asin for region, domain in domains.items() if domain is not None}
+    urls = {region: domain + asin for region, domain in domains.items() if domain is not None and asin is not None}
     return urls
 
 def get_out_of_stock_phrases(region):
