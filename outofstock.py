@@ -58,7 +58,7 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:52.0) Gecko/20100101 Firefox/52.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36',
     'Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; AS; rv:11.0) like Gecko',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36',
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36',
@@ -91,8 +91,7 @@ USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36',
     'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36',
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36',
-    
-]
+    ]
 
 def read_asins_from_excel(file_path):
     workbook = openpyxl.load_workbook(file_path)
@@ -103,7 +102,6 @@ def read_asins_from_excel(file_path):
         asin = row[0]
         cleaned_asin = clean_asin(asin)
         asins.append(cleaned_asin)
-        asins.append(asin)
 
     return asins
 
@@ -119,15 +117,20 @@ def check_availability(url, region):
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'lxml')
 
-            out_of_stock = soup.find('span', {'class': 'a-size-medium a-color-price'}) or \
-                           soup.find('div', {'id': 'availability'}) or \
-                           soup.find('span', {'class': 'a-size-medium a-color-state'})
+            availability_containers = [
+                soup.find("div", {"id": "availability_feature_div"}),
+                soup.find("div", {"id": "availabilityInsideBuyBox_feature_div"}),
+            ]
 
             out_of_stock_phrases = get_out_of_stock_phrases(region)
-            if out_of_stock and any(phrase in out_of_stock.text.lower() for phrase in out_of_stock_phrases):
-                return 'Out Of Stock'
-            else:
-                return 'In Stock'
+            for container in availability_containers:
+                if container:
+                    span_element = container.find("span", class_=lambda x: x in ["a-size-medium", "a-color-price", "a-color-state"])
+                    if span_element:
+                        print(f"Region: {region}, URL: {url}, Availability Text: {span_element.text.strip()}")  # Debugging line
+                        if any(phrase.strip().lower() in span_element.text.lower() for phrase in out_of_stock_phrases):
+                            return 'Out Of Stock'
+            return 'In Stock'
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
@@ -157,11 +160,11 @@ def generate_urls_for_asin(asin):
 
 def get_out_of_stock_phrases(region):
     phrases = {
-        'UK': ['out of stock', 'temporarily out of stock'],
-        'ES': ['agotado temporalmente', 'out of stock'],
-        'FR': ['temporairement en rupture de stock', 'out of stock'],
-        'DE': ['derzeit nicht auf lager', 'temporarily out of stock', 'out of stock'],
-        'IT': ['al momento non disponibile', 'out of stock'],
+        'UK': ['out of stock', 'temporarily out of stock', 'Currently unavailable.'],
+        'ES': ['agotado temporalmente', 'out of stock', 'No disponible.'],
+        'FR': ['temporairement en rupture de stock', 'out of stock', 'Actuellement indisponible.'],
+        'DE': ['derzeit nicht auf lager', 'Derzeit nicht verfügbar', 'temporarily out of stock', 'out of stock', 'Currently unavailable.'],
+        'IT': ['al momento non disponibile', 'out of stock', 'Non disponibile.'],
     }
     return phrases.get(region, [])
 
@@ -206,8 +209,10 @@ def status_text(status):
         return "OOS"
     elif status == "URL not found":
         return "No"
-    else:
+    elif status == "In Stock":
         return "Yes"
+    else:
+        return "Unknown"
 
 
 def load_or_create_workbook(file_path):
@@ -267,12 +272,12 @@ def create_email_body(results, total_urls, total_asins):
 # Main function
 def main():
     total_asins_processed = 0
-    input_file_path = r'C:\Users\gabriel.konopnicki\OneDrive - funko.com\Desktop\input\list.xlsx'
+    input_file_path = r'C:/Users/gabriel.konopnicki/OneDrive - funko.com/Desktop/input/list.xlsx'
 
     # Generate the output file name based on today's date
     today = datetime.today().strftime('%d%b%Y')
     output_file_name = f"ASINS_Status_{today}.xlsx"
-    output_file_path = fr'C:\Users\gabriel.konopnicki\OneDrive - funko.com\Desktop\input\output\{output_file_name}'
+    output_file_path = fr'C:/Users/gabriel.konopnicki/OneDrive - funko.com/Desktop/input/output/{output_file_name}'
 
     asins = read_asins_from_excel(input_file_path)
 
