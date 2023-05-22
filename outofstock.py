@@ -272,12 +272,12 @@ def create_email_body(results, total_urls, total_asins):
 # Main function
 def main():
     total_asins_processed = 0
-    input_file_path = r'C:/Users/gabriel.konopnicki/OneDrive - funko.com/Desktop/input/list.xlsx'
+    input_file_path = r'C:/Users/ritchie.emery/OneDrive - funko.com/Desktop/XRay/Input/list.xlsx'
 
     # Generate the output file name based on today's date
     today = datetime.today().strftime('%d%b%Y')
     output_file_name = f"ASINS_Status_{today}.xlsx"
-    output_file_path = fr'C:/Users/gabriel.konopnicki/OneDrive - funko.com/Desktop/input/output/{output_file_name}'
+    output_file_path = fr'C:/Users/ritchie.emery/OneDrive - funko.com/Desktop/XRay/Output/{output_file_name}'
 
     asins = read_asins_from_excel(input_file_path)
 
